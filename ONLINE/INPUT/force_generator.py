@@ -59,6 +59,7 @@ class ForceGenerator:
         self.pulse_active = False
         self.pulse_end_time = 0.0
         self.pulse_dof = 0  # DOF where pulse is applied
+        self.pulse_direction = 1  # Direction of pulse: 1 (right) or -1 (left)
         
         # Mode control
         self.auto_mode = True  # True for auto, False for manual
@@ -218,6 +219,7 @@ class ForceGenerator:
                 # Start new pulse
                 self.pulse_active = True
                 self.pulse_dof = np.random.randint(0, nDOF)  # Random DOF
+                self.pulse_direction = np.random.choice([-1, 1])  # Random direction: -1 (left) or 1 (right)
                 self.pulse_end_time = self.current_time + self.pulse_duration
                 self.next_pulse_time = self.current_time + self.pulse_interval
                 self.current_pulse_amplitude = self.pulse_amplitude
@@ -227,20 +229,21 @@ class ForceGenerator:
                 # Start manual impact (can be triggered even during earthquake/wind)
                 self.pulse_active = True
                 self.pulse_dof = np.random.randint(0, nDOF)  # Random DOF
+                self.pulse_direction = np.random.choice([-1, 1])  # Random direction: -1 (left) or 1 (right)
                 # Random amplitude between 0.5x and 1.5x of default
                 impact_amplitude = self.pulse_amplitude * (0.5 + np.random.rand())
                 self.pulse_end_time = self.current_time + self.pulse_duration
                 self.manual_trigger = False
                 # Store the amplitude for this pulse
                 self.current_pulse_amplitude = impact_amplitude
-                print(f"Manual impact triggered during active events (DOF: {self.pulse_dof})")
+                print(f"Manual impact triggered during active events (DOF: {self.pulse_dof}, direction: {'left' if self.pulse_direction == -1 else 'right'})")
             elif not self.pulse_active:
                 # Reset pulse amplitude to default if no active pulse
                 self.current_pulse_amplitude = self.pulse_amplitude
         
         # Apply pulse if active (can be superimposed with earthquake/wind)
         if self.pulse_active and self.current_time < self.pulse_end_time:
-            force[self.pulse_dof] += self.current_pulse_amplitude
+            force[self.pulse_dof] += self.current_pulse_amplitude * self.pulse_direction
         elif self.pulse_active and self.current_time >= self.pulse_end_time:
             self.pulse_active = False
         

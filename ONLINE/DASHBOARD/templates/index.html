@@ -557,6 +557,14 @@
         const floorWidth = 2.0;
         const floorDepth = 1.0;
         
+        // Color array for floors (same as chart colors)
+        const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7'];
+        
+        // Helper function to convert hex color string to Three.js color number
+        function hexToThreeColor(hex) {
+            return parseInt(hex.replace('#', '0x'));
+        }
+        
         // Create structure (糖葫芦串模型) - 只创建楼层，不创建柱子
         const floorMeshes = [];
         const floorInitialPositions = []; // Store initial positions
@@ -569,7 +577,7 @@
             // Floor
             const floorGeometry = new THREE.BoxGeometry(floorWidth, 0.1, floorDepth);
             const floorMaterial = new THREE.MeshPhongMaterial({ 
-                color: i === nDOF - 1 ? 0xff6b6b : 0x4ecdc4 
+                color: hexToThreeColor(colors[i])
             });
             const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
             floorMesh.position.set(0, y, 0);
@@ -611,8 +619,6 @@
         const accChartCtx = accChartCanvas.getContext('2d');
         accChartCanvas.width = accChartCanvas.offsetWidth;
         accChartCanvas.height = accChartCanvas.offsetHeight;
-        
-        const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7'];
         
         // Generic chart drawing function
         function drawGenericChart(ctx, canvas, historyArray, title) {
@@ -697,7 +703,7 @@
                 item.className = 'data-item';
                 item.innerHTML = `
                     <span class="data-label">Floor ${idx + 1}:</span>
-                    <span class="data-value">${(disp * 1000).toFixed(3)} mm</span>
+                    <span class="data-value" style="color: ${colors[idx]}">${(disp * 1000).toFixed(3)} mm</span>
                 `;
                 container.appendChild(item);
             });
@@ -713,7 +719,7 @@
                 item.className = 'data-item';
                 item.innerHTML = `
                     <span class="data-label">Floor ${idx + 1}:</span>
-                    <span class="data-value">${vel.toFixed(4)} m/s</span>
+                    <span class="data-value" style="color: ${colors[idx]}">${vel.toFixed(4)} m/s</span>
                 `;
                 container.appendChild(item);
             });
@@ -729,7 +735,7 @@
                 item.className = 'data-item';
                 item.innerHTML = `
                     <span class="data-label">Floor ${idx + 1}:</span>
-                    <span class="data-value">${acc.toFixed(4)} m/s²</span>
+                    <span class="data-value" style="color: ${colors[idx]}">${acc.toFixed(4)} m/s²</span>
                 `;
                 container.appendChild(item);
             });
