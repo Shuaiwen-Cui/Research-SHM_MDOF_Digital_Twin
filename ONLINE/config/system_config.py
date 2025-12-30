@@ -13,8 +13,8 @@ dt = 0.02  # seconds
 # Masses (kg) for each floor (from bottom to top)
 m_initial = np.array([1000, 800, 600, 500, 400])
 
-# Stiffnesses (N/m) for each floor
-k_initial = np.array([50000, 40000, 30000, 25000, 20000])
+# Stiffnesses (N/m) for each floor (5× increased for better higher mode visibility)
+k_initial = np.array([250000, 200000, 150000, 125000, 100000])
 
 # Damping ratio
 zeta_initial = 0.05

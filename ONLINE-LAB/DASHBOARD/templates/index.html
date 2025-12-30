@@ -623,18 +623,22 @@
         const velocityHistory = Array(nDOF).fill(0).map(() => []);
         const accelerationHistory = Array(nDOF).fill(0).map(() => []);
         
-        // PSD calculation parameters
-        const dt = 0.02; // Time step (seconds) - should match system_config.py
-        const fs = 1 / dt; // Sampling frequency (50 Hz)
+        // PSD calculation parameters - matching system_config.py (100 Hz sampling rate)
+        const dt = 0.01; // Time step (seconds) - matching system_config.py
+        const fs = 1 / dt; // Sampling frequency (100 Hz)
         const psdUpdateInterval = 5000; // Update PSD every 5 seconds (ms)
-        const psdBufferLength = Math.floor(120.0 / dt); // 120 seconds of data for PSD calculation (6000 samples) - longer for better resolution
+        const psdBufferLength = Math.floor(120.0 / dt); // 120 seconds of data for PSD calculation (12000 samples) - longer for better resolution
         const accelerationPSDBuffer = Array(nDOF).fill(0).map(() => []); // Longer buffer for PSD
         let lastPSDUpdate = 0;
         const psdResults = Array(nDOF).fill(0).map(() => ({freq: [], psd_db: []})); // Store PSD results
         
-        // Theoretical natural frequencies (Hz) - calculated from system parameters (5× stiffness)
-        // Mode 1: 0.8575 Hz, Mode 2: 2.0361 Hz, Mode 3: 3.1470 Hz, Mode 4: 4.0190 Hz, Mode 5: 4.5699 Hz
-        const theoreticalFrequencies = [0.8575, 2.0361, 3.1470, 4.0190, 4.5699];
+        // Low-pass filter configuration (from system_config.py)
+        const psdLowpassCutoff = {{ psd_lowpass_cutoff|default(15.0) }}; // Cutoff frequency (Hz) for low-pass filter before PSD calculation
+        
+        // Theoretical natural frequencies (Hz) - recalculated from system parameters
+        // Mass: [700, 700, 700, 700, 700] kg, Stiffness: [1000000, 1000000, 1000000, 1000000, 1000000] N/m
+        // Mode 1: 1.7122 Hz, Mode 2: 4.9979 Hz, Mode 3: 7.8786 Hz, Mode 4: 10.1211 Hz, Mode 5: 11.5436 Hz
+        const theoreticalFrequencies = [1.7122, 4.9979, 7.8786, 10.1211, 11.5436];
         const modeLabels = ['Mode 1', 'Mode 2', 'Mode 3', 'Mode 4', 'Mode 5'];
         
         // Debug: log theoretical frequencies to console
@@ -786,10 +790,60 @@
             return result;
         }
         
+        // Butterworth low-pass filter implementation
+        // Second-order Butterworth filter using bilinear transform
+        function lowpassFilter(signal, fs, cutoff) {
+            const N = signal.length;
+            if (N < 3) return signal; // Need minimum samples for filter
+            
+            // Pre-warp cutoff frequency for bilinear transform
+            const wc = 2 * Math.PI * cutoff;
+            const T = 1 / fs;
+            const wa = (2 / T) * Math.tan(wc * T / 2);
+            
+            // Butterworth filter coefficients (2nd order)
+            const a0 = wa * wa;
+            const a1 = 2 * wa * wa;
+            const a2 = wa * wa;
+            const b0 = 4 + 4 * wa * T + wa * wa * T * T;
+            const b1 = -8 + 2 * wa * wa * T * T;
+            const b2 = 4 - 4 * wa * T + wa * wa * T * T;
+            
+            // Normalize coefficients
+            const norm = 1 / b0;
+            const a0_norm = a0 * norm;
+            const a1_norm = a1 * norm;
+            const a2_norm = a2 * norm;
+            const b1_norm = b1 * norm;
+            const b2_norm = b2 * norm;
+            
+            // Apply filter (direct form II transposed)
+            const filtered = new Array(N);
+            let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            
+            for (let i = 0; i < N; i++) {
+                const x = signal[i];
+                const y = a0_norm * x + a1_norm * x1 + a2_norm * x2 - b1_norm * y1 - b2_norm * y2;
+                
+                filtered[i] = y;
+                
+                // Update delay line
+                x2 = x1;
+                x1 = x;
+                y2 = y1;
+                y1 = y;
+            }
+            
+            return filtered;
+        }
+        
         // Calculate PSD using Welch's method (proper implementation with averaging)
         function calculatePSD(signal, fs) {
             const N = signal.length;
             if (N < 256) return {freq: [], psd: []}; // Need minimum data
+            
+            // Apply low-pass filter before PSD calculation
+            const filteredSignal = lowpassFilter(signal, fs, psdLowpassCutoff);
             
             // Welch method parameters
             const nperseg = 2048; // Segment length (power of 2 for efficiency)
@@ -802,7 +856,7 @@
             
             if (nsegments < 1) {
                 // Fallback: use entire signal if too short
-                return calculatePSDSimple(signal, fs);
+                return calculatePSDSimple(filteredSignal, fs);
             }
             
             // Hanning window for each segment
@@ -823,7 +877,7 @@
             // Process each segment
             for (let seg = 0; seg < nsegments; seg++) {
                 const startIdx = seg * step;
-                const segment = signal.slice(startIdx, startIdx + nperseg);
+                const segment = filteredSignal.slice(startIdx, startIdx + nperseg);
                 
                 // Apply window
                 const windowed = segment.map((val, i) => val * window[i]);
@@ -876,8 +930,11 @@
         function calculatePSDSimple(signal, fs) {
             const N = signal.length;
             
+            // Apply low-pass filter before PSD calculation
+            const filteredSignal = lowpassFilter(signal, fs, psdLowpassCutoff);
+            
             // Apply window (Hanning window)
-            const windowed = signal.map((val, i) => {
+            const windowed = filteredSignal.map((val, i) => {
                 const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
                 return val * window;
             });
@@ -953,8 +1010,8 @@
             const yMax = maxPSD + margin;
             const yRange = yMax - yMin;
             
-            // Set frequency range to 0-5 Hz
-            const maxFreq = 5.0; // Fixed frequency range: 0-5 Hz
+            // Set frequency range to 0-15 Hz (all 5 modes: 1.7-11.5 Hz, with margin)
+            const maxFreq = 15.0; // Fixed frequency range: 0-15 Hz (all 5 modes: 1.7-11.5 Hz)
             
             // Draw grid
             psdChartCtx.strokeStyle = '#333';
@@ -980,7 +1037,7 @@
             psdChartCtx.textAlign = 'center';
             for (let i = 0; i <= 4; i++) {
                 const x = padding + (chartWidth / 4) * i;
-                const freqValue = (maxFreq / 4) * i; // 0, 1.25, 2.5, 3.75, 5.0 Hz
+                const freqValue = (maxFreq / 4) * i; // 0, 3.75, 7.5, 11.25, 15.0 Hz
                 psdChartCtx.fillText(freqValue.toFixed(1) + ' Hz', x, psdChartCanvas.height - 2);
             }
             
@@ -1005,7 +1062,7 @@
             });
             psdChartCtx.setLineDash([]); // Reset line dash
             
-            // Draw PSD curves for each floor (only show 0-5 Hz range)
+            // Draw PSD curves for each floor (show 0-15 Hz range)
             psdResults.forEach((result, floorIdx) => {
                 if (result.freq.length === 0 || result.psd_db.length === 0) return;
                 
@@ -1015,7 +1072,7 @@
                 
                 let firstPoint = true;
                 result.freq.forEach((f, idx) => {
-                    // Only draw points within 0-5 Hz range
+                    // Only draw points within 0-15 Hz range (all 5 modes: 1.7-11.5 Hz)
                     if (f <= maxFreq) {
                         const x = padding + (f / maxFreq) * chartWidth;
                         const y = padding + chartHeight - ((result.psd_db[idx] - yMin) / yRange) * chartHeight;
